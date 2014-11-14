@@ -3,7 +3,7 @@ from neoalchemy.compiler import Node, Properties, Variable, Relationship, \
     RelType
 
 
-if __name__ == '__main__':
+def basic_test():
     print 'Empty'
     print Node()
     print
@@ -45,3 +45,12 @@ if __name__ == '__main__':
         Node(), RelType.right(), Node(), RelType.right(), Node()
     )
     print
+
+
+if __name__ == '__main__':
+    class Monkey(ogm.Node):
+        name = ogm.Prop(str)
+        other_name = ogm.Prop('name', str)
+
+    r = Monkey.nodes.all()
+    print r

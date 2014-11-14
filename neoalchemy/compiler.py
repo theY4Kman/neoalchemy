@@ -73,6 +73,33 @@ class RelPiece(MatchPiece):
     __visit_name__ = 'rel_piece'
 
 
+class Match(Element):
+    __visit_name__ = 'match'
+
+    def __init__(self, *pieces):
+        #: List of MatchPieces
+        self.pieces = pieces
+
+
+class Return(Element):
+    __visit_name__ = 'return'
+
+    def __init__(self, *expressions):
+        #: List of Expressions to return
+        self.expressions = expressions
+
+
+class Query(Element):
+    __visit_name__ = 'query'
+
+    def __init__(self, match=None, return_=None):
+        self.match = match
+        self.return_ = return_
+
+        if self.match is None or self.return_ is None:
+            raise UnsupportedCompilationError(self)
+
+
 class Relationship(Element):
     __visit_name__ = 'relationship'
 
@@ -153,7 +180,11 @@ class RelType(Element):
         return self.left or self.right
 
 
-class Variable(Element):
+class Expression(Element):
+    """An Expression which can be used as a value or returned"""
+
+
+class Variable(Expression):
     __visit_name__ = 'variable'
 
     def __init__(self, node_type, name=None):
@@ -177,21 +208,21 @@ class Properties(Element):
         self.variable = variable
 
 
-class StringLiteral(Element):
+class StringLiteral(Expression):
     __visit_name__ = 'string'
 
     def __init__(self, s):
         self.s = s
 
 
-class Raw(Element):
+class Raw(Expression):
     __visit_name__ = 'raw'
 
     def __init__(self, v):
         self.v = v
 
 
-class Collection(Element):
+class Collection(Expression):
     __visit_name__ = 'collection'
 
     def __init__(self, elements):
@@ -204,6 +235,8 @@ class CypherCompiler(object):
         self.anon_vars = {}
         #: A counter used to build anonymous Variable names
         self.anon_counter = 1
+        #: Maps variable names to their sources
+        self.var_names = {}
 
     def visit_match_piece(self, match_piece, **kw):
         text = ''
@@ -227,6 +260,24 @@ class CypherCompiler(object):
     def visit_rel_piece(self, rel_piece, **kw):
         return '[' + self.visit_match_piece(rel_piece, **kw) + ']'
 
+    def visit_match(self, match, **kw):
+        text = 'MATCH '
+        pieces = [p._compiler_dispatch(self, **kw) for p in match.pieces]
+        text += ', '.join(pieces)
+        return text
+
+    def visit_return(self, return_, **kw):
+        text = 'RETURN '
+        exprs = [e._compiler_dispatch(self, **kw) for e in return_.expressions]
+        text += ', '.join(exprs)
+        return text
+
+    def visit_query(self, query, **kw):
+        text = query.match._compiler_dispatch(self, **kw)
+        text += '\n'
+        text += query.return_._compiler_dispatch(self, **kw)
+        return text
+
     def visit_variable(self, variable, **kw):
         name = variable.name
         if name is None:
@@ -235,6 +286,11 @@ class CypherCompiler(object):
                 self.anon_vars[key] = 'anon_' + str(self.anon_counter)
                 self.anon_counter += 1
             name = self.anon_vars[key]
+            variable.name = name
+
+        # keep track of variable names
+        if name not in self.var_names:
+            self.var_names[name] = variable
 
         return name
 
@@ -257,7 +313,6 @@ class CypherCompiler(object):
             text += ', '.join(props)
 
         text += '}'
-
         return text
 
     def visit_relationship(self, relationship, **kw):
