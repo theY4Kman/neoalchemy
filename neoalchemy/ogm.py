@@ -17,11 +17,10 @@ class Query(object):
         self.entities = entities
 
     def all(self):
-        return self._execute()
-        # return list(self)
+        return list(self)
 
     def __iter__(self):
-        return self._execute()
+        return iter(self._execute())
 
     def _execute(self):
         match_pieces = []
