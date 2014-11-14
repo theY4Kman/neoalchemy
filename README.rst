@@ -7,7 +7,7 @@ A SQLAlchemy-like Object Graph Mapper for Neo4j
 Example
 =======
 
-::
+.. code-block:: python
 
     from neoalchemy import *
 
