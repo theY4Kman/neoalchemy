@@ -46,7 +46,8 @@ class Query(object):
             # XXX: assuming only one column per record. prob not always true
             column, value = record.columns[0], record.values[0]
             node_type = comp.var_names[column].node_type
-            inflated.append(node_type._inflate(value))
+            impl = node_type._impl
+            inflated.append(impl.inflate(value))
 
         return inflated
 
@@ -72,7 +73,8 @@ class NodeManager(object):
 
 class NodeMeta(type):
     def __init__(cls, clsname, bases, clsdict):
-        if clsname != 'NodeMeta':
+        if (clsname != 'NodeMeta' and hasattr(cls, '__label__') and
+                    clsname != 'Node'):
             if cls.__label__ is None and bases != (object,):
                 cls.__label__ = clsname
 
@@ -80,6 +82,10 @@ class NodeMeta(type):
             cls._state = {}
             #: Records all the properties for iteration
             cls.__properties__ = set()
+
+            # Allow Node subclasses to override implementations
+            if not hasattr(cls, '_impl'):
+                cls._impl = NodeImpl(cls)
 
             for name in dir(cls):
                 attr = getattr(cls, name)
@@ -142,21 +148,31 @@ class Prop(object):
             instance._state[self.name] = value
 
 
-class Node(object):
-    """Base class for OGM Nodes"""
-    __metaclass__ = NodeMeta
-    __label__ = None
-    nodes = NodeManager
+class NodeImpl(object):
+    """Handles various operations for Nodes"""
 
-    @classmethod
-    def _inflate(cls, node):
+    def __init__(self, node_type):
+        self.node_type = node_type
+
+    def inflate(self, node):
         """Given a result from the database, return a Node which represents it
         """
-        instance = cls()
+        instance = self.node_type()
         # XXX: assumes it's a neo4j.Node
+        # TODO: unpacking with type support
         instance._state = node.get_properties()
         return instance
 
     @property
     def key(self):
-        return self.__class__.__module__ + '.' + self.__class__.__name__
+        return self.node_type.__module__ + '.' + self.node_type.__name__
+
+
+class BaseNode(object):
+    __metaclass__ = NodeMeta
+    nodes = NodeManager
+
+
+class Node(BaseNode):
+    """Base class for OGM Nodes"""
+    __label__ = None

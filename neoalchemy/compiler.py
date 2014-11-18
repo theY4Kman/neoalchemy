@@ -281,7 +281,7 @@ class CypherCompiler(object):
     def visit_variable(self, variable, **kw):
         name = variable.name
         if name is None:
-            key = variable.node_type.key
+            key = variable.node_type._impl.key
             if key not in self.anon_vars:
                 self.anon_vars[key] = 'anon_' + str(self.anon_counter)
                 self.anon_counter += 1
