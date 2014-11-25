@@ -1,8 +1,11 @@
 import operator
 import re
 
-from . import util
-from .exc import UnsupportedCompilationError
+from .. import util
+from ..exc import UnsupportedCompilationError, ArgumentError
+
+
+NO_ARG = util.symbol('NO_ARG')
 
 
 def _literal_as_text(element):
@@ -49,7 +52,7 @@ class Element(Visitable):
 
     @property
     def default_compiler(self):
-        return CypherCompiler()
+        return CypherCompiler(None)
 
     def _compile(self, **kw):
         return self._compiler_dispatch(self.default_compiler, **kw)
@@ -198,6 +201,24 @@ class Variable(Expression):
         self.name = name
 
 
+class BindParameter(Expression):
+    __visit_name__ = 'bindparam'
+
+    def __init__(self, key, value=NO_ARG, type_=None, unique=False):
+        """A BindParameter is used as a placeholder in a query. It can carry a
+        value to be passed as a parameter, or one can be provided at execution
+        time.
+
+        """
+        if value is NO_ARG:
+            value = None
+
+        # TODO: something about counters and anon maps and yada yada
+        self.key = key
+        self.value = value
+        self.unique = unique
+
+
 class Properties(Element):
     __visit_name__ = 'properties'
 
@@ -229,14 +250,41 @@ class Collection(Expression):
         self.elements = [_literal_as_text(e) for e in elements]
 
 
-class CypherCompiler(object):
-    def __init__(self):
+class Compiler(object):
+    """Base compiler class"""
+
+    def __init__(self, stmt):
+        self.stmt = stmt
+        self.string = None
+
+        if self.stmt is not None:
+            # Compile our statement, populating any stores a subclass builds
+            # (such as variable maps, etc)
+            self._compile()
+
+    def _compile(self):
+        if self.stmt is None:
+            raise ArgumentError('No statement provided to compile')
+        self.string = self.stmt._compiler_dispatch(self)
+        return self.string
+
+    def compile(self):
+        if self.string:
+            return self.string
+        else:
+            return self._compile()
+
+
+class CypherCompiler(Compiler):
+    def __init__(self, stmt):
         #: Maps anonymous Variables (those without a name) to their given name
         self.anon_vars = {}
         #: A counter used to build anonymous Variable names
         self.anon_counter = 1
         #: Maps variable names to their sources
         self.var_names = {}
+
+        super(CypherCompiler, self).__init__(stmt)
 
     def visit_match_piece(self, match_piece, **kw):
         text = ''
@@ -293,6 +341,10 @@ class CypherCompiler(object):
             self.var_names[name] = variable
 
         return name
+
+    def visit_bindparam(self, bindparam, **kw):
+        # TODO
+        raise NotImplementedError
 
     def visit_properties(self, properties, **kw):
         text = '{'

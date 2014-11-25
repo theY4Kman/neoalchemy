@@ -1,6 +1,7 @@
 from neoalchemy import ogm
-from neoalchemy.compiler import Node, Properties, Variable, Relationship, \
+from neoalchemy.cypher.compiler import Node, Properties, Variable, Relationship, \
     RelType
+from neoalchemy.types import *
 
 
 def basic_test():
@@ -77,8 +78,12 @@ if __name__ == '__main__':
     })
 
     class Monkey(ogm.Node):
-        name = ogm.Prop(str)
-        other_name = ogm.Prop('name', str)
+        name = ogm.Prop(String)
+        other_name = ogm.Prop('name_number_two', Float)
+
+        def __repr__(self):
+            return '(:Monkey {name: %r, other_name: %r})' % (
+                self.name, self.other_name)
 
     r = Monkey.nodes.all()
     print(r)

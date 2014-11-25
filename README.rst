@@ -17,3 +17,10 @@ Example
     Query(Monkey).all()
     # or
     Monkey.nodes.all()
+
+
+Licensing
+=========
+
+This library is released under the MIT license. It includes, in no small part,
+code from the SQLAlchemy library.

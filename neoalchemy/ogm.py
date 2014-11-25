@@ -3,8 +3,17 @@ from py2neo import neo4j
 db = neo4j.GraphDatabaseService('http://localhost:7474/db/data/')
 
 import logging
+import operator
 
-from . import compiler, util, exc
+from . import util, exc
+from .cypher import compiler, type_api
+
+
+NA_STATE_INSTANCE_VAR = '_neo_state'
+NA_NODE_INFO_INSTANCE_VAR = '_node_info'
+
+_instance_state = operator.attrgetter(NA_STATE_INSTANCE_VAR)
+_instance_info = operator.attrgetter(NA_NODE_INFO_INSTANCE_VAR)
 
 
 class Query(object):
@@ -35,8 +44,8 @@ class Query(object):
         return_ = compiler.Return(*return_pieces)
         query_node = compiler.Query(match=match, return_=return_)
 
-        comp = compiler.CypherCompiler()
-        query_string = query_node._compiler_dispatch(comp)
+        comp = compiler.CypherCompiler(query_node)
+        query_string = comp.compile()
         self.logger.debug(query_string)
         query = neo4j.CypherQuery(db, query_string)
 
@@ -71,6 +80,30 @@ class NodeManager(object):
         return self.get_query().all()
 
 
+class NodeInfo(object):
+    """Stores metadata about a Node"""
+
+    def __init__(self, node_type):
+        self.node_type = node_type
+        self.properties = {}
+
+    def add_property(self, prop):
+        prop._set_parent(self.node_type)
+        self.properties[prop.key] = prop
+
+    def remove_property(self, prop):
+        del self.properties[prop.key]
+
+    @property
+    def result_processors(self):
+        """A mapping of prop keys to their result_processors.
+        """
+        callables = {}
+        for key, prop in list(self.properties.items()):
+            callables[key] = prop.result_processor
+        return callables
+
+
 class NodeMeta(type):
     def __init__(cls, clsname, bases, clsdict):
         if (clsname != 'NodeMeta' and hasattr(cls, '__label__') and
@@ -78,10 +111,10 @@ class NodeMeta(type):
             if cls.__label__ is None and bases != (object,):
                 cls.__label__ = clsname
 
-            #: Underlying state of data.
-            cls._state = {}
-            #: Records all the properties for iteration
-            cls.__properties__ = set()
+            setattr(cls, NA_STATE_INSTANCE_VAR, {})
+
+            info = NodeInfo(cls)
+            setattr(cls, NA_NODE_INFO_INSTANCE_VAR, info)
 
             # Allow Node subclasses to override implementations
             if not hasattr(cls, '_impl'):
@@ -97,8 +130,7 @@ class NodeMeta(type):
                 elif isinstance(attr, Prop):
                     if attr.name is None:
                         attr.name = name
-                    attr._set_parent(cls)
-                    cls.__properties__.add(attr)
+                    info.add_property(attr)
 
         type.__init__(cls, clsname, bases, clsdict)
 
@@ -123,8 +155,9 @@ class Prop(object):
         if args or kwargs:
             raise exc.ArgumentError('Unhandled arguments', args, kwargs)
 
-        self.type_ = type_
+        self.type_ = type_api.to_instance(type_)
         self.name = name
+        self.key = kwargs.pop('key', name)
 
         self.parent = None
 
@@ -141,11 +174,19 @@ class Prop(object):
             return instance._state.get(self.name)
 
     def __set__(self, instance, value):
-        if instance is None:
-            # XXX: does this happen?
-            assert 0, 'wut?'
-        else:
-            instance._state[self.name] = value
+        state = _instance_state(instance)
+        state[self.name] = value
+
+    @property
+    def result_processor(self):
+        """Return the result_processor for this prop's type. If the type does
+        not need a result_processor, a callable returning its single argument
+        will be returned, so this property can always be used as a callable.
+        """
+        processor = self.type_.result_processor()
+        if processor is None:
+            processor = lambda v: v
+        return processor
 
 
 class NodeImpl(object):
@@ -159,8 +200,13 @@ class NodeImpl(object):
         """
         instance = self.node_type()
         # XXX: assumes it's a neo4j.Node
-        # TODO: unpacking with type support
-        instance._state = node.get_properties()
+        props = node.get_properties()
+        _info = _instance_info(instance)
+        _processors = _info.result_processors
+        for key, value in list(props.items()):
+            if key in _processors:
+                props[key] = _processors[key](value)
+        instance._state = props
         return instance
 
     @property

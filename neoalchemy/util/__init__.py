@@ -1,4 +1,4 @@
-from .compat import string_types, py2k, py3k
+from .compat import string_types, py2k, py3k, py32, callable
 
 from ._collections import KeyedTuple, ImmutableContainer, immutabledict, \
     Properties, OrderedProperties, ImmutableProperties, OrderedDict, \
@@ -9,4 +9,4 @@ from ._collections import KeyedTuple, ImmutableContainer, immutabledict, \
     LRUCache, ScopedRegistry, ThreadLocalRegistry, WeakSequence, \
     coerce_generator_arg
 
-from .langhelpers import set_creation_order
+from .langhelpers import set_creation_order, NoneType, symbol
