@@ -12,7 +12,7 @@ Example
     from neoalchemy import *
 
     class Monkey(Node):
-        name = Prop(str)
+        name = Prop(String)
 
     Query(Monkey).all()
     # or
